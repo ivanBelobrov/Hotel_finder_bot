@@ -1,4 +1,5 @@
 import telebot
+from decouple import config
 
-bot = telebot.TeleBot('1886275662:AAGWNYfL7liLb9aM9PyHmr0Iz8Mv-bRHZBM')
-
+TOKEN = config('HOTELSBOT_TOKEN')
+bot = telebot.TeleBot(TOKEN)
