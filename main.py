@@ -1,5 +1,5 @@
-import telebot
-from decouple import config
+from bot_init import bot
+import botrequests
 
-TOKEN = config('HOTELSBOT_TOKEN')
-bot = telebot.TeleBot(TOKEN)
+bot.polling(none_stop=True)
+
