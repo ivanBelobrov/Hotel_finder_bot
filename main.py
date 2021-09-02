@@ -27,11 +27,17 @@ def get_text_message(message) -> None:
                                            '/hello_world - Приветствие\n/lowprice - Подбор отелей с самой низкой ценой')
 
 
-@bot.message_handler(commands=['lowprice'])
-def low_price_command(message):
-    if message.from_user.id not in User.users:
+@bot.message_handler(commands=['lowprice', 'highprice'])
+def low_or_high_price_command(message):
+    if message.from_user.id not in User.get_users_list():
         User(message.from_user.id)
-    logger.info('Received lowprice command from user {}'.format(message.from_user.id))
+    if message.text == '/lowprice':
+        User.get_user_params(message.from_user.id)['sort_order'] = 'PRICE'
+        logger.info('Received lowprice command from user {}'.format(message.from_user.id))
+
+    else:
+        User.get_user_params(message.from_user.id)['sort_order'] = 'PRICE_HIGHEST_FIRST'
+        logger.info('Received highprice command from user {}'.format(message.from_user.id))
     bot.send_message(message.from_user.id, 'В каком городе вас интересуют отели?')
     bot.register_next_step_handler(message, get_city_id)
 
@@ -89,11 +95,11 @@ def get_city_id(message):
 
 
 def get_hotels(message, destination_id):
-    User.users[message.from_user.id]['city_id'] = destination_id
+    User.get_user_params(message.from_user.id)['city_id'] = destination_id
     hotels_amt = message.text
     logger.info('Found the id of the desired city - {} and the number of hotels to search - {} for the user {}'.format(
         destination_id, hotels_amt, message.from_user.id))
-    User.users[message.from_user.id]['hotels_amt'] = hotels_amt
+    User.get_user_params(message.from_user.id)['hotels_amt'] = hotels_amt
     bot.send_message(message.from_user.id, 'Желаете загрузить фото отелей? Если да, то введите кол-во фотографий через '
                                            'пробел (не более 10).')
     bot.register_next_step_handler(message, get_photo_url_and_request)
@@ -101,18 +107,18 @@ def get_hotels(message, destination_id):
 
 def get_photo_url_and_request(message):
     if message.text.split(' ')[0].lower() == 'да':
-        User.users[message.from_user.id]['send_photo'] = True
-        User.users[message.from_user.id]['photo_amt'] = message.text.split(' ')[-1]
+        User.get_user_params(message.from_user.id)['send_photo'] = True
+        User.get_user_params(message.from_user.id)['photo_amt'] = message.text.split(' ')[-1]
         logger.info('User {} wants {} photos of hotels'.format(message.from_user.id, message.text.split(' ')[-1]))
     else:
-        User.users[message.from_user.id]['send_photo'] = False
+        User.get_user_params(message.from_user.id)['send_photo'] = False
         logger.info('User {} dose not want photos of hotels'.format(message.from_user.id))
     user_params = User.get_user_params(message.from_user.id)
     querystring = {"destinationId": user_params['city_id'],
                    "pageNumber": "1", "pageSize": user_params['hotels_amt'],
                    "checkIn": str(datetime.now().date()),
                    "checkOut": str(datetime.now().date() + timedelta(days=1)), "adults1": "1",
-                   "sortOrder": "PRICE", "locale": "ru_RU",
+                   "sortOrder": user_params['sort_order'], "locale": "ru_RU",
                    "currency": "RUB"}
     try:
         data = hotels_req.hotels_request(API_TOKEN, querystring)
