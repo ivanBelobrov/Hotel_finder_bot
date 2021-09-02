@@ -1,3 +1,4 @@
+import botrequests.photo_req
 from botrequests import city_id_req, hotels_req
 from User import User
 from decouple import config
@@ -61,7 +62,6 @@ def get_city_id(message):
         except Exception as e:
             logger.error('Api error {}'.format(e))
             bot.send_message(message.from_user.id, 'Возникла ошибка, давайте начнем с начала')
-            bot.register_next_step_handler(message, low_price_command)
     cities_list = list()
 
     for city_dict in cities_data:
@@ -94,14 +94,16 @@ def get_hotels(message, destination_id):
     logger.info('Found the id of the desired city - {} and the number of hotels to search - {} for the user {}'.format(
         destination_id, hotels_amt, message.from_user.id))
     User.users[message.from_user.id]['hotels_amt'] = hotels_amt
-    bot.send_message(message.from_user.id, 'Желаете загрузить фото отелей? Ответьте да или нет.')
+    bot.send_message(message.from_user.id, 'Желаете загрузить фото отелей? Если да, то введите кол-во фотографий через '
+                                           'пробел (не более 10).')
     bot.register_next_step_handler(message, get_photo_url_and_request)
 
 
 def get_photo_url_and_request(message):
-    if message.text.lower() == 'да':
+    if message.text.split(' ')[0].lower() == 'да':
         User.users[message.from_user.id]['send_photo'] = True
-        logger.info('User {} wants photos of hotels'.format(message.from_user.id))
+        User.users[message.from_user.id]['photo_amt'] = message.text.split(' ')[-1]
+        logger.info('User {} wants {} photos of hotels'.format(message.from_user.id, message.text.split(' ')[-1]))
     else:
         User.users[message.from_user.id]['send_photo'] = False
         logger.info('User {} dose not want photos of hotels'.format(message.from_user.id))
@@ -122,22 +124,12 @@ def get_photo_url_and_request(message):
         except Exception as e:
             logger.error('Api error {}'.format(e))
             bot.send_message(message.from_user.id, 'Что-то пошло не так, давайте начнем все с начала.')
-            bot.register_next_step_handler(message, low_price_command)
 
     if user_params.get('send_photo'):
         for hotel in data['data']['body']['searchResults']['results']:
-            hotel_name = hotel['name']
-            hotel_photo = hotel['optimizedThumbUrls']['srpDesktop']
-            hotel_address = hotel['address']['streetAddress']
-            hotel_dist = hotel['landmarks'][0]['distance']
-            hotel_price = hotel['ratePlan']['price']['current']
-            bot.send_message(message.from_user.id, '{}\n<a href="{}">&#8203;</a>\n{}\n{}\n{}'.format(
-                hotel_name,
-                hotel_photo,
-                hotel_address,
-                hotel_dist,
-                hotel_price
-            ), parse_mode='HTML')
+            text = botrequests.photo_req.get_photo(hotel, message.from_user.id)
+            bot.send_media_group(message.from_user.id, text)
+
     else:
         for hotel in data['data']['body']['searchResults']['results']:
             hotel_name = hotel['name']

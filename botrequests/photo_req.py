@@ -1,37 +1,35 @@
 import requests
 import json
-from pprint import pprint
 from decouple import config
-import telebot
+from telebot.types import InputMediaPhoto
+from User import User
 
-API_TOKEN, TOKEN = config('RAPIDAPI_KEY'), config('HOTELSBOT_TOKEN')
-bot = telebot.TeleBot(TOKEN)
+API_TOKEN = config('RAPIDAPI_KEY')
 
 
-@bot.message_handler(commands=['start'])
-def photo(message):
+def get_photo(hotel, user_id):
+    hotel_name = hotel['name']
+    hotel_address = hotel['address']['streetAddress']
+    hotel_dist = hotel['landmarks'][0]['distance']
+    hotel_price = hotel['ratePlan']['price']['current']
+    message = '{}\n\n{}\n{}\n{}'.format(
+        hotel_name,
+        hotel_address,
+        hotel_dist,
+        hotel_price)
     url = "https://hotels4.p.rapidapi.com/properties/get-hotel-photos"
-
-    querystring = {"id": "1178275040"}
-
+    querystring = {"id": hotel['id']}
     headers = {
         'x-rapidapi-host': "hotels4.p.rapidapi.com",
-        'x-rapidapi-key': "0f123c60b9msh1e7991fcc1d156ep152a0fjsn7dadfd804f37"
+        'x-rapidapi-key': API_TOKEN
     }
-
     response = requests.request("GET", url, headers=headers, params=querystring)
-    data = json.loads(response.text)
-
-    photos_amt = 5
-    media_group = list()
+    data_photo = json.loads(response.text)
+    photos_amt = int(User.get_user_params(user_id)['photo_amt'])
+    photo_links = list()
     for i_photo in range(photos_amt):
-        # media_group.append({'type': 'photo', 'media': data['hotelImages'][i_photo]['baseUrl'].format(
-        #     size=data['hotelImages'][i_photo]['sizes'][0]['suffix']), 'parse_mode': 'HTML'}) # Пробовал создавать список словарей
-        media_group.append(data['hotelImages'][i_photo]['baseUrl'].format(   # И просто список URLов
-                size=data['hotelImages'][i_photo]['sizes'][0]['suffix']))
-    media_group_json = json.dumps(media_group)
-    pprint(media_group)
-    bot.send_media_group(message.from_user.id, media=media_group_json)
-
-
-bot.polling(none_stop=True)
+        photo_links.append(data_photo['hotelImages'][i_photo]['baseUrl'].format(
+            size=data_photo['hotelImages'][i_photo]['sizes'][0]['suffix']))
+    photos = [InputMediaPhoto(media=link, caption=message) for link in photo_links[:1]]
+    photos.extend([InputMediaPhoto(media=link) for link in photo_links[1:]])
+    return photos
