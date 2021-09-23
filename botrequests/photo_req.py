@@ -7,8 +7,9 @@ from User import User
 API_TOKEN = config('RAPIDAPI_KEY')
 
 
-def get_photo(hotel, user_id):
+def get_photo(hotel, user_id, hotels_names):
     hotel_name = hotel['name']
+    hotels_names = hotels_names + hotel['name'] + ', '
     hotel_address = hotel['address']['streetAddress']
     hotel_dist = hotel['landmarks'][0]['distance']
     hotel_price = hotel['ratePlan']['price']['current']
@@ -32,4 +33,4 @@ def get_photo(hotel, user_id):
             size=data_photo['hotelImages'][i_photo]['sizes'][0]['suffix']))
     photos = [InputMediaPhoto(media=link, caption=message) for link in photo_links[:1]]
     photos.extend([InputMediaPhoto(media=link) for link in photo_links[1:]])
-    return photos
+    return photos, hotels_names
