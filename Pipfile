@@ -8,6 +8,7 @@ pytelegrambotapi = "*"
 python-decouple = "*"
 requests = "*"
 loguru = "*"
+peewee = "*"
 
 [dev-packages]
 
