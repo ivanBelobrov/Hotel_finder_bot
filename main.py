@@ -1,17 +1,20 @@
-import botrequests.photo_req
-from botrequests import city_id_req, hotels_req
+from botrequests import photo_req, city_id_req, hotels_req
 from User import User
+from db_module import *
 from decouple import config
 import telebot
 from loguru import logger
 from telebot import types
 import time
-from string import ascii_lowercase
 import re
+import datetime
+import os
 
 API_TOKEN, TOKEN = config('RAPIDAPI_KEY'), config('HOTELSBOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 my_logger = logger.add('log.log', format='{time} {level} {message}')
+if not os.path.exists('db/history.db'):
+    create_db()
 
 
 @bot.message_handler(commands=['start'])
@@ -30,21 +33,14 @@ def help_command(message) -> None:
 @bot.message_handler(commands=['history'])
 def history_command(message):
     logger.info('Received history command from user {}'.format(message.from_user.id))
-
-    with open('log.log', 'r') as log:
-        for i_line in log:
-            text = ''
-            if 'Received' in i_line and str(message.from_user.id) in i_line:
-                cmd_date = "".join(re.findall(r'^\S{10}', i_line))
-                cmd_time = ''.join(re.findall(r'^\S{10}T(\S{8})', i_line))
-                command = ''.join(re.findall(r'Received\s(\D+)\scommand', i_line))
-                text = text.join(f'\nКоманда: {command}\nДата запроса: {cmd_date}\nВремя запроса: {cmd_time}')
-            if 'hotels:' in i_line and command in i_line and str(message.from_user.id) in i_line:
-                hotels = ''.join(re.findall(r'hotels:\s(.+?)(?:\n|$)', i_line))
-                text = text.join(f'Найденные отели: {hotels}')
-                bot.send_message(message.from_user.id, text)
-            elif text != '':
-                bot.send_message(message.from_user.id, text)
+    try:
+        history_data = give_me_record_db(message.from_user.id)
+        for i_event in history_data:
+            bot.send_message(message.from_user.id,
+                             f'Дата и время запроса: {i_event.date_and_time}\n'
+                             f'Команда: {i_event.command}\nОтели: {i_event.hotels}')
+    except TypeError:
+        bot.send_message(message.from_user.id, 'Не нашлось ни одного выполненного запроса.')
 
 
 @bot.message_handler(commands=['lowprice', 'highprice', 'bestdeal', 'history'])
@@ -54,15 +50,18 @@ def low_or_high_price_command(message):
     if message.text == '/lowprice':
         User.get_user_params(message.from_user.id)['sort_order'] = 'PRICE'
         User.get_user_params(message.from_user.id)['command'] = 'lowprice'
+        User.get_user_params(message.from_user.id)['datetime'] = datetime.datetime.now()
         logger.info('Received lowprice command from user {}'.format(message.from_user.id))
     elif message.text == '/highprice':
         User.get_user_params(message.from_user.id)['sort_order'] = 'PRICE_HIGHEST_FIRST'
         User.get_user_params(message.from_user.id)['command'] = 'highprice'
+        User.get_user_params(message.from_user.id)['datetime'] = datetime.datetime.now()
         logger.info('Received highprice command from user {}'.format(message.from_user.id))
     elif message.text == '/bestdeal':
         User.get_user_params(message.from_user.id)['sort_order'] = 'DISTANCE_FROM_LANDMARK'
         User.get_user_params(message.from_user.id)['command'] = 'bestdeal'
         User.get_user_params(message.from_user.id)['landmarkIds'] = 'City center'
+        User.get_user_params(message.from_user.id)['datetime'] = datetime.datetime.now()
         logger.info('Received bestdeal command from user {}'.format(message.from_user.id))
     else:
         logger.info('Received history command from user {}'.format(message.from_user.id))
@@ -80,6 +79,9 @@ def callback_inline(call):
 
 
 def price_range(message, destination_id):
+    if int(message.text) <= 0:
+        bot.send_message(message.from_user.id, 'Тогда попробуйте другую команду.')
+        return bot.register_next_step_handler(message, help_command)
     User.get_user_params(message.from_user.id)['city_id'] = destination_id
     User.get_user_params(message.from_user.id)['hotels_amt'] = message.text
     logger.info('Found the id of the desired city - {} and the number of hotels to search - {} for the user {}'.format(
@@ -101,10 +103,10 @@ def get_city_id(message):
     city = message.text.lower()
     logger.info('A user {} is looking for a hotel in {}'.format(message.from_user.id, city))
     querystring = dict()
-    if all([True if sym in ascii_lowercase else False for sym in city]):
+    if all([True if sym in 'abcdefghijklmnopqrstuvwxyz- ' else False for sym in city]):
         querystring['query'] = city
         querystring['locale'] = 'en_US'
-    elif all([True if sym in 'йцукенгшщзхъэждлорпавыфячсмитьбюё' else False for sym in city]):
+    elif all([True if sym in 'йцукенгшщзхъэждлорпавыфячсмитьбюё- ' else False for sym in city]):
         querystring['query'] = city
         querystring['locale'] = 'ru_RU'
     try:
@@ -116,7 +118,8 @@ def get_city_id(message):
             cities_data = city_id_req.city_id_request(API_TOKEN, querystring)
         except Exception as e:
             logger.error('Api error {}'.format(e))
-            return bot.send_message(message.from_user.id, 'Возникла ошибка, давайте начнем с начала')
+            bot.send_message(message.from_user.id, 'Возникла ошибка, давайте начнем с начала')
+            return bot.register_next_step_handler(message, help_command)
     cities_list = list()
 
     for city_dict in cities_data:
@@ -135,7 +138,7 @@ def get_city_id(message):
 
         bot.send_message(message.from_user.id, 'Какой город вы имели ввиду?', reply_markup=markup)
     elif len(cities_list) == 0:
-        bot.send_message(message.from_user.id, 'Город не найден. Попробуйте еще раз.')
+        bot.send_message(message.from_user.id, 'Город не найден. Попробуйте ввести название еще раз.')
         logger.error('City {} not found'.format(city))
         bot.register_next_step_handler(message, get_city_id)
     else:
@@ -153,21 +156,25 @@ def get_hotels(message, destination_id):
         logger.info('The user {} entered the desired range of distance to center from {} to {}'.format(
             message.from_user.id, message.text.split(' ')[0], message.text.split(' ')[1]))
     else:
+        if int(message.text) <= 0:
+            bot.send_message(message.from_user.id, 'Тогда попробуйте другую команду.')
+            return bot.register_next_step_handler(message, help_command)
         User.get_user_params(message.from_user.id)['city_id'] = destination_id
         User.get_user_params(message.from_user.id)['hotels_amt'] = message.text
         logger.info('Found the id of the desired city - {} and the number of hotels to search'
                     ' - {} for the user {}'.format(destination_id, message.text, message.from_user.id))
-    bot.send_message(message.from_user.id, 'Желаете загрузить фото отелей? Если да, то введите кол-во фотографий через '
-                                           'пробел (не более 10).')
+    bot.send_message(message.from_user.id, 'Желаете загрузить фото отелей? Введите от 0 до 10.')
     bot.register_next_step_handler(message, get_photo_url_and_request)
 
 
 def get_photo_url_and_request(message):
-    if message.text.split(' ')[0].lower() == 'да':
+    if 1 <= int(message.text) <= 10:
         User.get_user_params(message.from_user.id)['send_photo'] = True
-        User.get_user_params(message.from_user.id)['photo_amt'] = message.text.split(' ')[-1]
-        logger.info('User {} wants {} photos of hotels'.format(message.from_user.id, message.text.split(' ')[-1]))
+        User.get_user_params(message.from_user.id)['photo_amt'] = message.text
+        logger.info('User {} wants {} photos of hotels'.format(message.from_user.id, message.text))
     else:
+        if int(message.text) < 0 or int(message.text) > 10:
+            bot.send_message(message.from_user.id, 'К сожалению, такое количество фото я не смогу прислать.')
         User.get_user_params(message.from_user.id)['send_photo'] = False
         logger.info('User {} dose not want photos of hotels'.format(message.from_user.id))
     user_params = User.get_user_params(message.from_user.id)
@@ -186,24 +193,29 @@ def get_photo_url_and_request(message):
     if user_params.get('send_photo'):
         hotels_names = ''
         for hotel in data:
-            try:
-                text, hotels_names = botrequests.photo_req.get_photo(hotel, message.from_user.id, hotels_names)
-                bot.send_media_group(message.from_user.id, text)
-            except KeyError as e:
-                logger.error(f'Key Error {e}')
-                bot.send_message(message.from_user.id, 'Произошла ошибка, попробуйте другой запрос.')
-        logger.info(f'User {message.from_user.id} on command {user_params["command"]} got hotels: {hotels_names[:-2]}')
+            hotels_names, text = hotel_message(hotel, hotels_names)
+            media_group, hotels_names = photo_req.get_photo(hotel, message.from_user.id, hotels_names, text)
+            bot.send_media_group(message.from_user.id, media_group)
+        new_record_db(message.from_user.id, user_params['datetime'], user_params['command'], hotels_names[:-2])
     else:
         hotels_names = ''
         for hotel in data:
-            hotel_name = hotel['name']
-            hotels_names = hotels_names + hotel['name'] + ', '
-            hotel_address = hotel['address']['streetAddress']
-            hotel_dist = hotel['landmarks'][0]['distance']
-            hotel_price = hotel['ratePlan']['price']['current']
-            text = f'{hotel_name}\n{hotel_address}\n{hotel_dist}\n{hotel_price}'
+            hotels_names, text = hotel_message(hotel, hotels_names)
             bot.send_message(message.from_user.id, text)
-        logger.info(f'User {message.from_user.id} on command {user_params["command"]} got hotels: {hotels_names[:-2]}')
+        new_record_db(message.from_user.id, user_params['datetime'], user_params['command'], hotels_names[:-2])
+
+
+def hotel_message(hotel, hotels_names):
+    hotel_name = hotel['name']
+    hotels_names = hotels_names + hotel['name'] + ', '
+    try:
+        hotel_address = hotel['address']['streetAddress']
+    except KeyError:
+        hotel_address = 'К сожалению у этого отеля не указан адрес.'
+    hotel_dist = hotel['landmarks'][0]['distance']
+    hotel_price = hotel['ratePlan']['price']['current']
+    text = f'{hotel_name}\n{hotel_address}\n{hotel_dist}\n{hotel_price}'
+    return hotels_names, text
 
 
 bot.polling(none_stop=True)

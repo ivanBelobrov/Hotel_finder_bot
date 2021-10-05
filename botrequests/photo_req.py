@@ -7,17 +7,7 @@ from User import User
 API_TOKEN = config('RAPIDAPI_KEY')
 
 
-def get_photo(hotel, user_id, hotels_names):
-    hotel_name = hotel['name']
-    hotels_names = hotels_names + hotel['name'] + ', '
-    hotel_address = hotel['address']['streetAddress']
-    hotel_dist = hotel['landmarks'][0]['distance']
-    hotel_price = hotel['ratePlan']['price']['current']
-    message = '{}\n\n{}\n{}\n{}'.format(
-        hotel_name,
-        hotel_address,
-        hotel_dist,
-        hotel_price)
+def get_photo(hotel, user_id, hotels_names, message):
     url = "https://hotels4.p.rapidapi.com/properties/get-hotel-photos"
     querystring = {"id": hotel['id']}
     headers = {
