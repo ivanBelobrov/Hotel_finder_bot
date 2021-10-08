@@ -2,22 +2,29 @@ import requests
 import json
 from decouple import config
 from telebot.types import InputMediaPhoto
-from User import User
+from Classes.User import User
+from typing import Tuple, List, Dict, Any
 
 API_TOKEN = config('RAPIDAPI_KEY')
 
 
-def get_photo(hotel, user_id, hotels_names):
-    hotel_name = hotel['name']
-    hotels_names = hotels_names + hotel['name'] + ', '
-    hotel_address = hotel['address']['streetAddress']
-    hotel_dist = hotel['landmarks'][0]['distance']
-    hotel_price = hotel['ratePlan']['price']['current']
-    message = '{}\n\n{}\n{}\n{}'.format(
-        hotel_name,
-        hotel_address,
-        hotel_dist,
-        hotel_price)
+def get_photo(hotel: Dict[str, Any], user_id: int, hotels_names: str, message: str)\
+        -> Tuple[List[InputMediaPhoto], str]:
+    """
+    Функция, которая делает запрос к API и получает фотографии отелей,
+    а так же их названия для формирования записи в БД.
+
+    :param hotel: словарь с параметрами отеля
+    :type: Dict[str, Any]
+    :param user_id: id пользователя
+    :type: int
+    :param hotels_names: перечисление названий отеля, подобранных для пользователя
+    :type: str
+    :param message: текст сообщения для пользователя с описанием отеля
+    :type: str
+    :return: кортеж в котором содержится список из объектов класса InputMediaPhoto и перечисление найденных отелей.
+    :rtype: Tuple[List[InputMediaPhoto], str]
+    """
     url = "https://hotels4.p.rapidapi.com/properties/get-hotel-photos"
     querystring = {"id": hotel['id']}
     headers = {
