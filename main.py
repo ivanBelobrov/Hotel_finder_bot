@@ -1,6 +1,6 @@
 from botrequests import photo_req, city_id_req, hotels_req
-from Classes.User import User
-from Classes.db_module import *
+from user_module.user import User
+from db_module.db_cls import *
 from decouple import config
 import telebot
 from loguru import logger
