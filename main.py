@@ -189,7 +189,8 @@ def get_city_id(message: types.Message) -> Optional[types.Message]:
             cities_data = city_id_req.city_id_request(API_TOKEN, querystring)
         except Exception as e:
             logger.error('Api error {}'.format(e))
-            return bot.send_message(message.from_user.id, 'Возникла ошибка, давайте начнем с начала')
+            bot.send_message(message.from_user.id, 'Возникла ошибка, давайте начнем с начала')
+            return bot.register_next_step_handler(message, help_command)
     cities_list = list()
 
     for city_dict in cities_data:
