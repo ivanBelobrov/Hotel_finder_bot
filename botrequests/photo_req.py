@@ -2,7 +2,7 @@ import requests
 import json
 from decouple import config
 from telebot.types import InputMediaPhoto
-from Classes.User import User
+from user_module.user import User
 from typing import Tuple, List, Dict, Any
 
 API_TOKEN = config('RAPIDAPI_KEY')
