@@ -5,11 +5,11 @@ from decouple import config
 import telebot
 from loguru import logger
 from telebot import types
-import time
 import re
 import datetime
 import os
 from typing import Optional, Dict, Any, Tuple
+import json.decoder
 
 API_TOKEN, TOKEN = config('RAPIDAPI_KEY'), config('HOTELSBOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
@@ -182,15 +182,16 @@ def get_city_id(message: types.Message) -> Optional[types.Message]:
         querystring['locale'] = 'ru_RU'
     try:
         cities_data = city_id_req.city_id_request(API_TOKEN, querystring)
-    except Exception as e:
-        logger.error('Api error {}'.format(e))
-        time.sleep(10)
-        try:
-            cities_data = city_id_req.city_id_request(API_TOKEN, querystring)
-        except Exception as e:
-            logger.error('Api error {}'.format(e))
-            bot.send_message(message.from_user.id, 'Возникла ошибка, давайте начнем с начала')
-            return bot.register_next_step_handler(message, help_command)
+    except ConnectionError as e:
+        logger.error('Api connection error {}'.format(e))
+        return bot.send_message(message.from_user.id, 'Нет, соединения с сервисом, попробуйте позже.')
+    except TimeoutError as e:
+        logger.error('Api timeout error {}'.format(e))
+        return bot.send_message(message.from_user.id, 'Время ожидания запроса истекло, попробуйте другой запрос.')
+    except json.decoder.JSONDecodeError as e:
+        logger.error(f'JSON decode error {e}')
+        return bot.send_message(message.from_user.id, 'Получен некорректный ответ от сервиса.'
+                                                      ' Попробуйте другой запрос.')
     cities_list = list()
 
     for city_dict in cities_data:
@@ -289,15 +290,16 @@ def get_photo_url_and_request(message: types.Message) -> Optional[types.Message]
     user_params = User.get_user_params(message.from_user.id)
     try:
         data = hotels_req.hotels_request(API_TOKEN, user_params)
-    except Exception as e:
-        logger.error('Api error {}'.format(e))
-        time.sleep(10)
-        try:
-            data = hotels_req.hotels_request(API_TOKEN, user_params)
-        except Exception as e:
-            logger.error('Api error {}'.format(e))
-            return bot.send_message(message.from_user.id, 'Что-то пошло не так, давайте начнем все с начала.')
-
+    except ConnectionError as e:
+        logger.error('Api connection error {}'.format(e))
+        return bot.send_message(message.from_user.id, 'Нет, соединения с сервисом, попробуйте позже.')
+    except TimeoutError as e:
+        logger.error('Api timeout error {}'.format(e))
+        return bot.send_message(message.from_user.id, 'Время ожидания запроса истекло, попробуйте другой запрос.')
+    except json.decoder.JSONDecodeError as e:
+        logger.error(f'JSON decode error {e}')
+        return bot.send_message(message.from_user.id, 'Получен некорректный ответ от сервиса.'
+                                                      ' Попробуйте другой запрос.')
     if user_params.get('send_photo'):
         hotels_names = ''
         for hotel in data:
@@ -354,7 +356,8 @@ def hotel_message(hotel: Dict[str, Any], hotels_names: str) -> Tuple[str, str]:
         hotel_address = 'К сожалению у этого отеля не указан адрес.'
     hotel_dist = hotel['landmarks'][0]['distance']
     hotel_price = hotel['ratePlan']['price']['current']
-    text = f'{hotel_name}\n{hotel_address}\n{hotel_dist}\n{hotel_price}'
+    hotel_link = f'https://ru.hotels.com/ho{hotel["id"]}'
+    text = f'{hotel_name}\n{hotel_address}\n{hotel_dist}\n{hotel_price}\n{hotel_link}'
     return hotels_names, text
 
 
