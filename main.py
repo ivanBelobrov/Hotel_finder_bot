@@ -66,7 +66,7 @@ def history_command(message: types.Message) -> None:
 
 
 @bot.message_handler(commands=['lowprice', 'highprice', 'bestdeal'])
-def low_or_high_price_command(message: types.Message) -> None:
+def main_commands(message: types.Message) -> None:
     """
     Функция, обрабатывающая 3 команды /lowprice, /highprice и /bestdeal
 
@@ -103,6 +103,14 @@ def callback_inline(call: types.CallbackQuery) -> None:
     :param call: объкут класса CallbackQuery
     :type call: types.CallbackQuery
     """
+    for i_elem in call.message.reply_markup.keyboard:
+        if call.data == i_elem[0].callback_data:
+            city_name = i_elem[0].text
+            bot.edit_message_text(text=city_name, chat_id=call.message.chat.id, message_id=call.message.id,
+                                  reply_markup=None)
+            break
+    if check_command(call.message):
+        return
     bot.send_message(call.message.chat.id, 'Сколько отелей вам показать?')
     if User.get_user_params(call.message.chat.id)['command'] == 'bestdeal':
         bot.register_next_step_handler(call.message, price_range, call.data)
@@ -122,6 +130,8 @@ def price_range(message: types.Message, destination_id: int) -> Optional[types.M
     :return: отправляет сообщение пользователю об ошибке или None
     :rtype: Optional[types.Message]
     """
+    if check_command(message):
+        return
     if not message.text.isdigit():
         return bot.send_message(message.from_user.id, 'Введено некорректное значение. Начните поиск заново.')
     if int(message.text) <= 0:
@@ -146,6 +156,8 @@ def center_distance_range(message: types.Message) -> Optional[types.Message]:
     :return: отправляет сообщение пользователю об ошибке или None
     :rtype: Optional[types.Message]
     """
+    if check_command(message):
+        return
     try:
         price_max, price_min = message.text.split(' ')[1], message.text.split(' ')[0]
     except IndexError as e:
@@ -171,6 +183,8 @@ def get_city_id(message: types.Message) -> Optional[types.Message]:
     :return: возвращает None или отправляет пользователю сообщение об ошибке
     :rtype: Optional[types.Message]
     """
+    if check_command(message):
+        return
     city = message.text.lower()
     logger.info('A user {} is looking for a hotel in {}'.format(message.from_user.id, city))
     querystring = dict()
@@ -205,7 +219,7 @@ def get_city_id(message: types.Message) -> Optional[types.Message]:
         markup = types.InlineKeyboardMarkup(row_width=2)
 
         for i in cities_list:
-            button = types.InlineKeyboardButton(i['city_name'], callback_data=i['destinationID'])
+            button = types.InlineKeyboardButton(i['city_name'], callback_data=i["destinationID"])
             markup.add(button)
 
         bot.send_message(message.from_user.id, 'Какой город вы имели ввиду?', reply_markup=markup)
@@ -233,6 +247,8 @@ def get_hotels(message: types.Message, destination_id: int) -> Optional[types.Me
     :return: отправляет сообщение пользователю об ошибке или None
     :rtype: Optional[types.Message]
     """
+    if check_command(message):
+        return
     if User.get_user_params(message.from_user.id)['command'] == 'bestdeal':
         try:
             distance_min, distance_max = message.text.split(' ')[0], message.text.split(' ')[1]
@@ -274,6 +290,8 @@ def get_photo_url_and_request(message: types.Message) -> Optional[types.Message]
     любые ошибки
     :rtype: Optional[types.Message]
     """
+    if check_command(message):
+        return
     if message.text.isdigit():
         if 1 <= int(message.text) <= 10:
             User.get_user_params(message.from_user.id)['send_photo'] = True
@@ -306,18 +324,18 @@ def get_photo_url_and_request(message: types.Message) -> Optional[types.Message]
             hotels_names, text = hotel_message(hotel, hotels_names)
             media_group, hotels_names = photo_req.get_photo(hotel, message.from_user.id, hotels_names, text)
             bot.send_media_group(message.from_user.id, media_group)
-        check_hotels_amt(user_params, message.from_user.id, len(data))
+        check_hotels_req_amt(user_params, message.from_user.id, len(data))
         new_record_db(message.from_user.id, user_params['datetime'], user_params['command'], hotels_names[:-2])
     else:
         hotels_names = ''
         for hotel in data:
             hotels_names, text = hotel_message(hotel, hotels_names)
             bot.send_message(message.from_user.id, text)
-        check_hotels_amt(user_params, message.from_user.id, len(data))
+        check_hotels_req_amt(user_params, message.from_user.id, len(data))
         new_record_db(message.from_user.id, user_params['datetime'], user_params['command'], hotels_names[:-2])
 
 
-def check_hotels_amt(user_params: Dict[str, Any], user_id: int, hotels_amt_req: int) -> types.Message:
+def check_hotels_req_amt(user_params: Dict[str, Any], user_id: int, hotels_amt_req: int) -> types.Message:
     """
     Функция проверяет количество найденных отелей и отправляет пользователю одно из сообщений.
 
@@ -359,6 +377,27 @@ def hotel_message(hotel: Dict[str, Any], hotels_names: str) -> Tuple[str, str]:
     hotel_link = f'https://ru.hotels.com/ho{hotel["id"]}'
     text = f'{hotel_name}\n{hotel_address}\n{hotel_dist}\n{hotel_price}\n{hotel_link}'
     return hotels_names, text
+
+
+def check_command(message: types.Message) -> bool:
+    """
+    Функция проверяет хочет ли пользователь сменить команду.
+
+    :param message: объект класса Message
+    :type message: types.Message
+    """
+    if message.text == '/lowprice' or message.text == '/highprice' or message.text == 'bestdeal':
+        main_commands(message)
+        return True
+    elif message.text == '/history':
+        history_command(message)
+        return True
+    elif message.text == '/help':
+        help_command(message)
+        return True
+    elif message.text == '/start':
+        start_command(message)
+        return True
 
 
 bot.polling(none_stop=True)
