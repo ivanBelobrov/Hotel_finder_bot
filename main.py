@@ -111,7 +111,7 @@ def callback_inline(call: types.CallbackQuery) -> None:
             break
     if check_command(call.message):
         return
-    bot.send_message(call.message.chat.id, 'Сколько отелей вам показать?')
+    bot.send_message(call.message.chat.id, 'Сколько отелей вам показать? Введите от 0 до 10.')
     if User.get_user_params(call.message.chat.id)['command'] == 'bestdeal':
         bot.register_next_step_handler(call.message, price_range, call.data)
     else:
@@ -159,7 +159,7 @@ def center_distance_range(message: types.Message) -> Optional[types.Message]:
     if check_command(message):
         return
     try:
-        price_max, price_min = message.text.split(' ')[1], message.text.split(' ')[0]
+        price_max, price_min = int(message.text.split(' ')[1]), int(message.text.split(' ')[0])
     except IndexError as e:
         logger.error(f'User error {e}')
         return bot.send_message(message.from_user.id, 'Введены неверные данные, попробуйте начать поиск заново.')
