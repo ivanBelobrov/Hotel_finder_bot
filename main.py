@@ -8,7 +8,7 @@ from telebot import types
 import re
 import datetime
 import os
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, Callable, Union
 import json.decoder
 
 API_TOKEN, TOKEN = config('RAPIDAPI_KEY'), config('HOTELSBOT_TOKEN')
@@ -92,6 +92,7 @@ def main_commands(message: types.Message) -> None:
         User.get_user_params(message.from_user.id)['datetime'] = datetime.datetime.now()
         logger.info('Received bestdeal command from user {}'.format(message.from_user.id))
     bot.send_message(message.from_user.id, 'В каком городе вас интересуют отели?')
+    User.get_user_params(message.from_user.id)['errs_cnt'] = 0
     bot.register_next_step_handler(message, get_city_id)
 
 
@@ -132,19 +133,11 @@ def price_range(message: types.Message, destination_id: int) -> Optional[types.M
     """
     if check_command(message):
         return
-    if not message.text.isdigit():
-        return bot.send_message(message.from_user.id, 'Введено некорректное значение. Начните поиск заново.')
-    if int(message.text) <= 0:
-        return bot.send_message(message.from_user.id, 'Тогда попробуйте другую команду.')
-    elif int(message.text) > 10:
-        bot.send_message(message.from_user.id, 'К сожалению я могу найти не более 10 отелей за раз.')
-        message.text = 10
-    User.get_user_params(message.from_user.id)['city_id'] = destination_id
-    User.get_user_params(message.from_user.id)['hotels_amt'] = message.text
-    logger.info('Found the id of the desired city - {} and the number of hotels to search - {} for the user {}'.format(
-        destination_id, message.text, message.from_user.id))
-    bot.send_message(message.from_user.id, 'Укажите через пробел диапазон цен в рублях.')
-    bot.register_next_step_handler(message, center_distance_range)
+    if check_hotels_amt(message, price_range, destination_id):
+        bot.send_message(message.from_user.id, 'Укажите через пробел диапазон цен в рублях.')
+        bot.register_next_step_handler(message, center_distance_range)
+    else:
+        return
 
 
 def center_distance_range(message: types.Message) -> Optional[types.Message]:
@@ -162,7 +155,7 @@ def center_distance_range(message: types.Message) -> Optional[types.Message]:
         price_max, price_min = int(message.text.split(' ')[1]), int(message.text.split(' ')[0])
     except IndexError as e:
         logger.error(f'User error {e}')
-        return bot.send_message(message.from_user.id, 'Введены неверные данные, попробуйте начать поиск заново.')
+        return errs_cnt(message, center_distance_range)
     if price_min > price_max:
         bot.send_message(message.from_user.id, 'Кажется вы перепутали цены местами, но ничего, я исправил.')
         price_min, price_max = price_max, price_min
@@ -254,7 +247,7 @@ def get_hotels(message: types.Message, destination_id: int) -> Optional[types.Me
             distance_min, distance_max = message.text.split(' ')[0], message.text.split(' ')[1]
         except IndexError as e:
             logger.error(f'User error {e}')
-            return bot.send_message(message.from_user.id, 'Введены неверные данные, попробуйте начать поиск заново.')
+            return errs_cnt(message, get_hotels, destination_id)
         if distance_min > distance_max:
             bot.send_message(message.from_user.id, 'Кажется вы перепутали значения местами, но ничего, я исправил.')
             distance_min, distance_max = distance_max, distance_min
@@ -262,20 +255,14 @@ def get_hotels(message: types.Message, destination_id: int) -> Optional[types.Me
         User.get_user_params(message.from_user.id)['distanceMax'] = distance_max
         logger.info('The user {} entered the desired range of distance to center from {} to {}'.format(
             message.from_user.id, message.text.split(' ')[0], message.text.split(' ')[1]))
+        bot.send_message(message.from_user.id, 'Желаете загрузить фото отелей? Введите от 0 до 10.')
+        bot.register_next_step_handler(message, get_photo_url_and_request)
     else:
-        if not message.text.isdigit():
-            return bot.send_message(message.from_user.id, 'Введено некорректное значение. Начните поиск заново.')
-        if int(message.text) <= 0:
-            return bot.send_message(message.from_user.id, 'Тогда попробуйте другую команду.')
-        elif int(message.text) > 10:
-            bot.send_message(message.from_user.id, 'К сожалению я могу найти не более 10 отелей за раз.')
-            message.text = 10
-        User.get_user_params(message.from_user.id)['city_id'] = destination_id
-        User.get_user_params(message.from_user.id)['hotels_amt'] = message.text
-        logger.info('Found the id of the desired city - {} and the number of hotels to search'
-                    ' - {} for the user {}'.format(destination_id, message.text, message.from_user.id))
-    bot.send_message(message.from_user.id, 'Желаете загрузить фото отелей? Введите от 0 до 10.')
-    bot.register_next_step_handler(message, get_photo_url_and_request)
+        if check_hotels_amt(message, get_hotels, destination_id):
+            bot.send_message(message.from_user.id, 'Желаете загрузить фото отелей? Введите от 0 до 10.')
+            bot.register_next_step_handler(message, get_photo_url_and_request)
+        else:
+            return
 
 
 def get_photo_url_and_request(message: types.Message) -> Optional[types.Message]:
@@ -386,7 +373,7 @@ def check_command(message: types.Message) -> bool:
     :param message: объект класса Message
     :type message: types.Message
     """
-    if message.text == '/lowprice' or message.text == '/highprice' or message.text == 'bestdeal':
+    if message.text == '/lowprice' or message.text == '/highprice' or message.text == '/bestdeal':
         main_commands(message)
         return True
     elif message.text == '/history':
@@ -398,6 +385,64 @@ def check_command(message: types.Message) -> bool:
     elif message.text == '/start':
         start_command(message)
         return True
+
+
+def errs_cnt(message: types.Message, func: Callable, data: Optional[int] = None) -> Optional[types.Message]:
+    """
+    Функция счетчик ошибок пользователя.
+
+    :param message: объект класса Message
+    :type message: types.Message
+    :param func: функция, которую нужно будет перезапустить после проверки
+    :type func: Callable
+    :param data: возможный аргемент, который нужно сохранить в случае успешной проверки
+    :type data: Optional[int]
+    :return: отправляет сообщение что привышено количество ошибок или перезапускает функцию, на которой была
+    инициализирована проверка
+    :rtype: Optional[types.Message]
+    """
+    if User.get_user_params(message.from_user.id).get('errs_cnt') is None:
+        User.get_user_params(message.from_user.id)['errs_cnt'] = 1
+    else:
+        User.get_user_params(message.from_user.id)['errs_cnt'] += 1
+    if User.get_user_params(message.from_user.id)['errs_cnt'] < 3:
+        bot.send_message(message.from_user.id, 'Введены не верные данные, попробуйте ввести еще раз.')
+        if data is None:
+            return bot.register_next_step_handler(message, func)
+        else:
+            return bot.register_next_step_handler(message, func, data)
+    else:
+        User.get_user_params(message.from_user.id)['errs_cnt'] = 0
+        return bot.send_message(message.from_user.id, 'Вы ввели неверные данные трижды. Начните поиск заново.')
+
+
+def check_hotels_amt(message: types.Message, func: Callable, destination_id: int) -> \
+        Union[Callable, types.Message, bool]:
+    """
+    Функция проверяет валидность данные о количество отелей, запрошенных пользователем для поиска.
+
+    :param message: объект класса Message
+    :type message: types.Message
+    :param func: функция в которой была инициализирована проверка
+    :type func: Callable
+    :param destination_id: id искомого города
+    :type destination_id: int
+    :return: функция может возвращать результат другой функции, отправлять сообщение пользователю если он запросил 0
+    или больше 10 отелей или True
+    :rtype: Union[Callable, types.Message, bool]
+    """
+    if not message.text.isdigit():
+        return errs_cnt(message, func, destination_id)
+    if int(message.text) <= 0:
+        return bot.send_message(message.from_user.id, 'Тогда попробуйте другую команду.')
+    elif int(message.text) > 10:
+        bot.send_message(message.from_user.id, 'К сожалению я могу найти не более 10 отелей за раз.')
+        message.text = 10
+    User.get_user_params(message.from_user.id)['city_id'] = destination_id
+    User.get_user_params(message.from_user.id)['hotels_amt'] = message.text
+    logger.info('Found the id of the desired city - {} and the number of hotels to search'
+                ' - {} for the user {}'.format(destination_id, message.text, message.from_user.id))
+    return True
 
 
 bot.polling(none_stop=True)
