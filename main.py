@@ -142,7 +142,8 @@ def price_range(message: types.Message, destination_id: int) -> Optional[types.M
 
 def center_distance_range(message: types.Message) -> Optional[types.Message]:
     """
-    Функция принимает от пользователя минимальную и максимальную цену для поиска.
+    Функция принимает от пользователя минимальную и максимальную цену для поиска. И запрашивает у пользователя диапазон
+    расстояния до центра города.
 
     :param message: объект класса Message
     :type message: types.Message
@@ -230,7 +231,7 @@ def get_city_id(message: types.Message) -> Optional[types.Message]:
 
 def get_hotels(message: types.Message, destination_id: int) -> Optional[types.Message]:
     """
-    Функция принимает от пользователя id города и количество отелей, но в случае если пользователем была введена команда
+    Функция принимает id города и количество отелей, но в случае если пользователем была введена команда
     /bestdeal то функция принимает минимальное и максимальное расстояние до центра.
 
     :param message: объект класса Message
